@@ -71,14 +71,26 @@ export function emptyLog(): ExperimentLog {
   }
 }
 
-export function assignVariant(_visitorId: string): Variant {
-  // TODO: hash estable. El mismo id tiene que devolver siempre la misma variante.
-  return 'a'
+/**
+ * Asignación estable con FNV-1a (32 bits).
+ * Mismo id -> mismo hash -> misma variante. Sin Math.random().
+ */
+export function hashVisitorId(visitorId: string): number {
+  let hash = 0x811c9dc5 // offset basis de FNV-1a
+  for (let i = 0; i < visitorId.length; i++) {
+    hash ^= visitorId.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193) // prime de FNV, multiplicación de 32 bits
+  }
+  return hash >>> 0 // forzar entero sin signo
 }
 
-export function conversionRate(_stats: VariantStats): number | null {
-  // TODO: conversiones / impresiones. Sin impresiones, devolver null, no 0.
-  return null
+export function assignVariant(visitorId: string): Variant {
+  return hashVisitorId(visitorId) % 2 === 0 ? 'a' : 'b'
+}
+
+export function conversionRate(stats: VariantStats): number | null {
+  if (stats.impressions <= 0) return null
+  return stats.conversions / stats.impressions
 }
 
 export function rateGap(log: ExperimentLog): number | null {
@@ -88,11 +100,23 @@ export function rateGap(log: ExperimentLog): number | null {
   return (treatment - control) * 100
 }
 
-export function parseLog(_raw: string | undefined): ExperimentLog {
-  // TODO: validar el JSON antes de usarlo. Si falla, log vacío.
-  return emptyLog()
+export function parseLog(raw: string | undefined): ExperimentLog {
+  if (!raw) return emptyLog()
+  try {
+    const data = JSON.parse(raw)
+    const log = emptyLog()
+    for (const v of ['a', 'b'] as const) {
+      const imp = data?.[v]?.impressions
+      const con = data?.[v]?.conversions
+      if (Number.isInteger(imp) && imp >= 0 && Number.isInteger(con) && con >= 0 && con <= imp) {
+        log[v] = { impressions: imp, conversions: con }
+      }
+    }
+    return log
+  } catch {
+    return emptyLog()
+  }
 }
-
 export function serializeLog(log: ExperimentLog): string {
   return JSON.stringify(log)
 }
@@ -137,3 +161,9 @@ export function cookieOptions(secure: boolean, maxAge?: number) {
     ...(typeof maxAge === 'number' ? { maxAge } : {}),
   }
 }
+console.log(
+  HASH_EXAMPLE_ID,
+  hashVisitorId(HASH_EXAMPLE_ID),
+  assignVariant(HASH_EXAMPLE_ID),
+  assignVariant(HASH_EXAMPLE_ID), // repetido: tiene que coincidir
+)
